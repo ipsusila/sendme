@@ -1,0 +1,2 @@
+# sendme
+Mail sender application
