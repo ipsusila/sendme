@@ -63,6 +63,7 @@ type DeliveryConfig struct {
 	SendMode              bool     `json:"sendMode"`
 	SentFile              string   `json:"sentFile"`
 	SkipIfSent            bool     `json:"skipIfSent"`
+	RequiredFields        []string `json:"requiredFields"`
 }
 
 // TlsConfig definition

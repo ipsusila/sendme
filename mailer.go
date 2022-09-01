@@ -3,6 +3,7 @@ package sendme
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -133,17 +134,27 @@ func (m *Mailer) readSentList() error {
 	for scan.Scan() {
 		addr := strings.TrimSpace(scan.Text())
 		if addr != "" {
-			m.sentList = append(m.sentList, addr)
+			m.sentList = append(m.sentList, strings.ToLower(addr))
 		}
 	}
 	sort.Strings(m.sentList)
+
+	// log
+	m.ui.Logf("SENT>>\n")
+	for _, addr := range m.sentList {
+		m.ui.Logf("  %s\n", addr)
+	}
 
 	return nil
 }
 
 func (m *Mailer) mailSent(addr string) bool {
-	idx := sort.SearchStrings(m.sentList, addr)
-	return idx >= 0 && idx < len(m.sentList)
+	addr = strings.TrimSpace(addr)
+	_, found := sort.Find(len(m.sentList), func(i int) int {
+		return strings.Compare(addr, m.sentList[i])
+	})
+
+	return found
 }
 
 func (m *Mailer) Send(ctx context.Context) error {
@@ -167,8 +178,15 @@ func (m *Mailer) Send(ctx context.Context) error {
 
 	// loop through message and send email
 	for _, datum := range m.data.Data {
+		if !datum.HasFields(m.conf.Delivery.RequiredFields) {
+			js, _ := json.Marshal(datum)
+			m.ui.Logf("Skip DATUM>> %s\n", string(js))
+			continue
+		}
 		var sb strings.Builder
 		if err := m.tpl.Execute(&sb, datum); err != nil {
+			js, _ := json.Marshal(datum)
+			m.ui.Logf("DATUM>> %s\n", string(js))
 			return err
 		}
 

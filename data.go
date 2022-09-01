@@ -39,6 +39,14 @@ func (m MailData) StringDefault(key, def string) string {
 		return fmt.Sprintf("%v", v)
 	}
 }
+func (m MailData) HasFields(reqFields []string) bool {
+	for _, field := range reqFields {
+		if val := m.StringDefault(field, ""); val == "" {
+			return false
+		}
+	}
+	return true
+}
 
 // NewMailDataCollection create mail data collection from files
 func NewMailDataCollection(conf *Config) (*MailDataCollection, error) {
