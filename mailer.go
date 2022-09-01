@@ -11,6 +11,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	mail "github.com/xhit/go-simple-mail/v2"
 )
@@ -38,15 +39,16 @@ type Executer interface {
 
 // Mailer data structure
 type Mailer struct {
-	conf     *Config
-	data     *MailDataCollection
-	server   *mail.SMTPServer
-	ccList   []string
-	bccList  []string
-	tpl      Executer
-	ui       Ui
-	sentWr   io.Writer
-	sentList []string
+	conf       *Config
+	data       *MailDataCollection
+	server     *mail.SMTPServer
+	ccList     []string
+	bccList    []string
+	tpl        Executer
+	ui         Ui
+	sentWr     io.Writer
+	sentList   []string
+	intBetween time.Duration
 }
 
 func NewMailer(conf *Config) (*Mailer, error) {
@@ -118,6 +120,12 @@ func NewMailer(conf *Config) (*Mailer, error) {
 		return nil, err
 	}
 
+	// default interval between sending email
+	m.intBetween, err = time.ParseDuration(conf.Delivery.IntervalBetweenSend)
+	if err != nil {
+		m.intBetween = time.Second
+	}
+
 	return &m, nil
 }
 
@@ -139,10 +147,12 @@ func (m *Mailer) readSentList() error {
 	}
 	sort.Strings(m.sentList)
 
-	// log
-	m.ui.Logf("SENT>>\n")
-	for _, addr := range m.sentList {
-		m.ui.Logf("  %s\n", addr)
+	// log if verbose mode
+	if m.conf.Verbose {
+		m.ui.Logf("<<Sent addresses>>\n")
+		for _, addr := range m.sentList {
+			m.ui.Logf("  %s\n", addr)
+		}
 	}
 
 	return nil
@@ -180,13 +190,13 @@ func (m *Mailer) Send(ctx context.Context) error {
 	for _, datum := range m.data.Data {
 		if !datum.HasFields(m.conf.Delivery.RequiredFields) {
 			js, _ := json.Marshal(datum)
-			m.ui.Logf("Skip DATUM>> %s\n", string(js))
+			m.ui.Logf("[WARN] Skip DATUM>> %s\n", string(js))
 			continue
 		}
 		var sb strings.Builder
 		if err := m.tpl.Execute(&sb, datum); err != nil {
 			js, _ := json.Marshal(datum)
-			m.ui.Logf("DATUM>> %s\n", string(js))
+			m.ui.Logf("[WARN] DATUM>> %s\n", string(js))
 			return err
 		}
 
@@ -205,9 +215,7 @@ func (m *Mailer) Send(ctx context.Context) error {
 				m.ui.Logf("Error when sending email: %v\n", err)
 			}
 		case ActDontSend:
-			// TODO:
-		case ActSend:
-			// TODO:
+			m.ui.Logf("Skip send by user\n")
 		}
 	}
 
@@ -247,6 +255,7 @@ func (m *Mailer) sendMail(ctx context.Context, conn *mail.SMTPClient, datum Mail
 	// set destination
 	dest := ""
 	toCount := 0
+	var sbSent strings.Builder
 	if c.Delivery.SendMode {
 		for _, to := range toList {
 			if c.Delivery.SkipIfSent && m.mailSent(to.Address) {
@@ -254,7 +263,7 @@ func (m *Mailer) sendMail(ctx context.Context, conn *mail.SMTPClient, datum Mail
 				m.ui.Logf("Skipping address: %s, email already sent\n", to.Address)
 				continue
 			}
-			fmt.Fprintln(m.sentWr, to.Address)
+			fmt.Fprintln(&sbSent, to.Address)
 			toCount++
 
 			msg.AddTo(to.String())
@@ -280,16 +289,30 @@ func (m *Mailer) sendMail(ctx context.Context, conn *mail.SMTPClient, datum Mail
 
 	// Ask for confirmation
 	if !c.Delivery.SkipConfirmBeforeSend {
-		str := fmt.Sprintf("Send email to %s [(Y)es/(N)o/Yes to (A)ll/(C)ancel?", dest)
+		str := fmt.Sprintf("Send email to %s [(Y)es/(N)o/Yes to (A)ll/(C)ancel]? ", dest)
 		action, err := m.ui.Confirm(str)
 		if err != nil {
 			return action, err
 		}
+		if action == ActSendAll {
+			m.ui.Logf("Skip further confirmation\n")
+			m.conf.Delivery.SkipConfirmBeforeSend = true
+		}
+
+		// check testing
+		if action != ActSend && action != ActSendAll {
+			return action, nil
+		}
 	}
 
-	m.ui.Logf("Sending email to: %s\n", dest)
+	if m.intBetween > 0 {
+		time.Sleep(m.intBetween)
+	}
 	if err := msg.Send(conn); err != nil {
 		return ActContinueError, err
 	}
+	m.ui.Logf("Sent email to: %s\n", dest)
+	fmt.Fprint(m.sentWr, sbSent.String())
+
 	return ActContinueError, msg.GetError()
 }

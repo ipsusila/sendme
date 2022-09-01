@@ -64,6 +64,7 @@ type DeliveryConfig struct {
 	SentFile              string   `json:"sentFile"`
 	SkipIfSent            bool     `json:"skipIfSent"`
 	RequiredFields        []string `json:"requiredFields"`
+	IntervalBetweenSend   string   `json:"intervalBetweenSend"`
 }
 
 // TlsConfig definition
@@ -80,6 +81,7 @@ type Config struct {
 	Server   *ServerConfig   `json:"server"`
 	Delivery *DeliveryConfig `json:"delivery"`
 	Tls      *TlsConfig      `json:"tls"`
+	Verbose  bool            `json:"verbose"`
 }
 
 // MakeTlsConfig return tls.Config from given configuration
@@ -155,10 +157,11 @@ func DefaultConfig() *Config {
 			InsecureSkipVerify: true,
 		},
 		Delivery: &DeliveryConfig{
-			DefaultSubject: "Mail from Golang",
-			TemplateName:   "sendme",
-			SentFile:       "sentaddr.txt",
-			SkipIfSent:     true,
+			DefaultSubject:        "Mail from Golang",
+			TemplateName:          "sendme",
+			SentFile:              "sentaddr.txt",
+			SkipIfSent:            true,
+			SkipConfirmBeforeSend: true,
 		},
 	}
 }

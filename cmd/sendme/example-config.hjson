@@ -1,0 +1,52 @@
+{
+    // server configuration
+    server: {
+        // LOGIN, PLAIN, NONE, CRAM-MD5
+        authentication: PLAIN
+
+        // NONE, SSL, TLS, SSL/TLS, STARTTLS
+        encryption: SSL/TLS
+
+        // username and password
+        // if not set, it will be prompted during execution
+        username: "mail@example.com"
+        password: "password"
+
+        // helo
+        helo: localhost
+
+        //timeout setting
+        connectTimeout: 30s
+        sendTimeout: 20s
+        keepAlive: true
+
+        // host and port
+        host: mail.example.com
+        port: 465
+    }
+
+    // delivery configuration
+    delivery: {
+        from: "Organizer <organizer@example.com>"
+        bccList: "Committee <committee@gexample.com>"
+        mailFormat: PLAIN
+        templateFiles: ["iconsta2022.tpl"]
+        templateName: iconsta2022.tpl
+        dataFile: "participants.xlsx"
+        toDataField: Email
+        subjectDataField: ""
+        defaultSubject: "Organizing Committee Decision"
+        skipConfirmBeforeSend: true
+        testAddress: me@example.com
+        sendMode: true
+        sentFile: sentaddr.txt
+        skipIfSent: true
+        requiredFields: ["Email", "Hasil"]
+    }
+
+    // tls related configuration
+    tls: {
+        insecureSkipVerify: true
+        serverName: mail.example.com
+    }
+}
