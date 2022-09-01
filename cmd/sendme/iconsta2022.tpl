@@ -1,4 +1,4 @@
-{{if lower .Hasil | contains "accept" -}}
+{{- if lower .Hasil | contains "accept" -}}
 Dear author(s),
 
 We are pleased to inform you that your abstract titled "{{.Judul}}" has been {{.Hasil}} for the International Conference on Nuclear Science, Technology, and Application (ICONSTA). 
@@ -28,7 +28,7 @@ Please do not hesitate to ask us if there are any questions.
 Thank you and best regards,
 
 ICONSTA 2022 Organizing Committee
-{{- else}}
+{{- else -}}
 Dear authors,
 
 We regret to decide that your abstract titled "{{.Judul}}" doesn't meet our standard in part of novelty and knowledge contribution for the International Conference on Nuclear Science, Technology, and Application (ICONSTA). 
