@@ -13,3 +13,10 @@
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+
+.DS_store
+
+_testdata/
+cmd/sendme/config.hjson
+cmd/sendme/sendme*
+cmd/sendme/*.txt
