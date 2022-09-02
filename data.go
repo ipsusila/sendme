@@ -19,6 +19,14 @@ type MailDataCollection struct {
 	Data []MailData
 }
 
+type Stats struct {
+	Total          int
+	NumSent        int
+	NumAlreadySent int
+	NumSkip        int
+	NumError       int
+}
+
 // StringDefault return string value or default
 func (m MailData) StringDefault(key, def string) string {
 	v, ok := m[key]
@@ -76,7 +84,7 @@ func (m *MailDataCollection) load(filename string) error {
 func (m *MailDataCollection) loadXlsx(filename string) error {
 	f, err := excelize.OpenFile(filename)
 	if err != nil {
-		return err
+		return fmt.Errorf("open xlsx file %s error: %w", filename, err)
 	}
 	defer f.Close()
 
@@ -94,14 +102,14 @@ func (m *MailDataCollection) loadXlsx(filename string) error {
 
 	rows, err := f.GetRows(sheet)
 	if err != nil {
-		return err
+		return fmt.Errorf("method GetRows error: %w", err)
 	}
 	return m.rowsToCollection(rows)
 }
 func (m *MailDataCollection) loadCsv(filename string) error {
 	f, err := os.Open(filename)
 	if err != nil {
-		return err
+		return fmt.Errorf("open csv file %s error: %w", filename, err)
 	}
 	defer f.Close()
 
@@ -110,7 +118,7 @@ func (m *MailDataCollection) loadCsv(filename string) error {
 	rd.TrimLeadingSpace = true
 	rows, err := rd.ReadAll()
 	if err != nil {
-		return err
+		return fmt.Errorf("read all csv rows error: %w", err)
 	}
 	return m.rowsToCollection(rows)
 }

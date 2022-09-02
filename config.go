@@ -2,6 +2,7 @@ package sendme
 
 import (
 	"crypto/tls"
+	"fmt"
 	"time"
 
 	"github.com/ipsusila/opt"
@@ -92,7 +93,7 @@ func (t *TlsConfig) MakeTlsConfig() (*tls.Config, error) {
 	if t.CertFile != "" && t.KeyFile != "" {
 		cer, err := tls.LoadX509KeyPair(t.CertFile, t.KeyFile)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("load certificate %s/%s error: %w", t.CertFile, t.KeyFile, err)
 		}
 		tc.Certificates = []tls.Certificate{cer}
 	}
@@ -120,7 +121,7 @@ func (s *ServerConfig) Configure(srv *mail.SMTPServer) error {
 	if s.ConnectTimeout != "" {
 		to, err := time.ParseDuration(s.ConnectTimeout)
 		if err != nil {
-			return err
+			return fmt.Errorf("parsing connect timeout `%s` error: %w", s.ConnectTimeout, err)
 		}
 		srv.ConnectTimeout = to
 	}
@@ -128,7 +129,7 @@ func (s *ServerConfig) Configure(srv *mail.SMTPServer) error {
 	if s.SendTimeout != "" {
 		to, err := time.ParseDuration(s.SendTimeout)
 		if err != nil {
-			return err
+			return fmt.Errorf("parsing send timeout `%s` error: %w", s.ConnectTimeout, err)
 		}
 		srv.SendTimeout = to
 	}
@@ -170,11 +171,11 @@ func DefaultConfig() *Config {
 func LoadConfig(filename string) (*Config, error) {
 	op, err := opt.FromFile(filename, opt.FormatAuto)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load config from %s: %w", filename, err)
 	}
 	conf := DefaultConfig()
 	if err := op.AsStruct(conf); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error converting option to struct: %w", err)
 	}
 
 	return conf, nil

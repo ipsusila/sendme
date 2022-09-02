@@ -94,7 +94,13 @@ func main() {
 		conf.Server.Password = "**********"
 		pp.Println(conf)
 	} else {
-		if err := mailer.Send(ctx); err != nil {
+		st, err := mailer.Send(ctx)
+		fmt.Printf("Number Sent         : %d\n", st.NumSent)
+		fmt.Printf("Number Skip         : %d\n", st.NumSkip)
+		fmt.Printf("Number already sent : %d\n", st.NumAlreadySent)
+		fmt.Printf("Number error        : %d\n", st.NumError)
+		fmt.Printf("Total data          : %d\n", st.Total)
+		if err != nil {
 			log.Fatalf("Error sending email: %v\n", err)
 		}
 		log.Printf("Sending email done, elapsed: %v\n", time.Since(start))

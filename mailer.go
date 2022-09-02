@@ -96,20 +96,20 @@ func NewMailer(conf *Config) (*Mailer, error) {
 	}
 
 	// parse cc/bcc
-	if conf.Delivery.CcList != "" {
-		cc, err := stdmail.ParseAddressList(conf.Delivery.CcList)
+	if cclist := conf.Delivery.CcList; cclist != "" {
+		cc, err := stdmail.ParseAddressList(cclist)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("parse CC-list %s error: %w", cclist, err)
 		}
 		for _, addr := range cc {
 			m.ccList = append(m.ccList, addr.String())
 		}
 	}
 
-	if conf.Delivery.BccList != "" {
-		bcc, err := stdmail.ParseAddressList(conf.Delivery.BccList)
+	if bcclist := conf.Delivery.BccList; bcclist != "" {
+		bcc, err := stdmail.ParseAddressList(bcclist)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("parse BCC-list %s error: %w", bcclist, err)
 		}
 		for _, addr := range bcc {
 			m.bccList = append(m.bccList, addr.String())
@@ -135,6 +135,7 @@ func (m *Mailer) readSentList() error {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
+		return fmt.Errorf("open file %s error: %w", m.conf.Delivery.SentFile, err)
 	}
 	defer fd.Close()
 
@@ -159,7 +160,7 @@ func (m *Mailer) readSentList() error {
 }
 
 func (m *Mailer) mailSent(addr string) bool {
-	addr = strings.TrimSpace(addr)
+	addr = strings.ToLower(strings.TrimSpace(addr))
 	_, found := sort.Find(len(m.sentList), func(i int) int {
 		return strings.Compare(addr, m.sentList[i])
 	})
@@ -167,21 +168,24 @@ func (m *Mailer) mailSent(addr string) bool {
 	return found
 }
 
-func (m *Mailer) Send(ctx context.Context) error {
+func (m *Mailer) Send(ctx context.Context) (Stats, error) {
+	st := Stats{
+		Total: len(m.data.Data),
+	}
 	// ensure connection keep alive
 	m.server.KeepAlive = true
 
 	// open connection
 	conn, err := m.server.Connect()
 	if err != nil {
-		return err
+		return st, fmt.Errorf("connect to smtp server error: %w", err)
 	}
 	defer conn.Close()
 
 	// load send list
 	fd, err := os.OpenFile(m.conf.Delivery.SentFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return err
+		return st, fmt.Errorf("error opening sent file %s: %w", m.conf.Delivery.SentFile, err)
 	}
 	defer fd.Close()
 	m.sentWr = fd
@@ -191,25 +195,27 @@ func (m *Mailer) Send(ctx context.Context) error {
 		if !datum.HasFields(m.conf.Delivery.RequiredFields) {
 			js, _ := json.Marshal(datum)
 			m.ui.Logf("[WARN] Skip DATUM>> %s\n", string(js))
+			st.NumSkip++
 			continue
 		}
 		var sb strings.Builder
 		if err := m.tpl.Execute(&sb, datum); err != nil {
 			js, _ := json.Marshal(datum)
 			m.ui.Logf("[WARN] DATUM>> %s\n", string(js))
-			return err
+			st.NumError++
+			return st, err
 		}
 
 		// send each mail
-		action, err := m.sendMail(ctx, conn, datum, sb.String())
+		action, err := m.sendMail(ctx, conn, datum, sb.String(), &st)
 		if err != nil && action != ActContinueError {
-			return err
+			return st, err
 		}
 
 		// Check action/message
 		switch action {
 		case ActAbortSend:
-			return errors.New("aborted by user")
+			return st, errors.New("aborted by user")
 		case ActContinueError:
 			if err != nil {
 				m.ui.Logf("Error when sending email: %v\n", err)
@@ -219,10 +225,10 @@ func (m *Mailer) Send(ctx context.Context) error {
 		}
 	}
 
-	return nil
+	return st, nil
 }
 
-func (m *Mailer) sendMail(ctx context.Context, conn *mail.SMTPClient, datum MailData, body string) (int, error) {
+func (m *Mailer) sendMail(ctx context.Context, conn *mail.SMTPClient, datum MailData, body string, st *Stats) (int, error) {
 	c := m.conf
 	msg := mail.NewMSG()
 
@@ -234,7 +240,7 @@ func (m *Mailer) sendMail(ctx context.Context, conn *mail.SMTPClient, datum Mail
 	}
 	toList, err := stdmail.ParseAddressList(toVals)
 	if err != nil {
-		return ActContinueError, err
+		return ActContinueError, fmt.Errorf("parse address `%s` error: %w", toVals, err)
 	}
 
 	// setup body
@@ -261,6 +267,7 @@ func (m *Mailer) sendMail(ctx context.Context, conn *mail.SMTPClient, datum Mail
 			if c.Delivery.SkipIfSent && m.mailSent(to.Address) {
 				// skip already send email
 				m.ui.Logf("Skipping address: %s, email already sent\n", to.Address)
+				st.NumAlreadySent++
 				continue
 			}
 			fmt.Fprintln(&sbSent, to.Address)
@@ -268,7 +275,7 @@ func (m *Mailer) sendMail(ctx context.Context, conn *mail.SMTPClient, datum Mail
 
 			msg.AddTo(to.String())
 			if dest != "" {
-				dest += ";"
+				dest += ","
 			}
 			dest += to.String()
 		}
@@ -292,7 +299,7 @@ func (m *Mailer) sendMail(ctx context.Context, conn *mail.SMTPClient, datum Mail
 		str := fmt.Sprintf("Send email to %s [(Y)es/(N)o/Yes to (A)ll/(C)ancel]? ", dest)
 		action, err := m.ui.Confirm(str)
 		if err != nil {
-			return action, err
+			return action, fmt.Errorf("user confirmation error %w", err)
 		}
 		if action == ActSendAll {
 			m.ui.Logf("Skip further confirmation\n")
@@ -309,10 +316,12 @@ func (m *Mailer) sendMail(ctx context.Context, conn *mail.SMTPClient, datum Mail
 		time.Sleep(m.intBetween)
 	}
 	if err := msg.Send(conn); err != nil {
-		return ActContinueError, err
+		st.NumError++
+		return ActContinueError, fmt.Errorf("sending email to %s error: %w", dest, err)
 	}
 	m.ui.Logf("Sent email to: %s\n", dest)
 	fmt.Fprint(m.sentWr, sbSent.String())
+	st.NumSent += toCount
 
 	return ActContinueError, msg.GetError()
 }
