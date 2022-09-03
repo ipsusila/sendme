@@ -66,6 +66,7 @@ type DeliveryConfig struct {
 	SkipIfSent            bool     `json:"skipIfSent"`
 	RequiredFields        []string `json:"requiredFields"`
 	IntervalBetweenSend   string   `json:"intervalBetweenSend"`
+	ResendFile            string   `json:"resendFile"`
 }
 
 // TlsConfig definition

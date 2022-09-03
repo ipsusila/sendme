@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	stdmail "net/mail"
 	"os"
 	"sort"
 	"strings"
@@ -48,6 +47,7 @@ type Mailer struct {
 	ui         Ui
 	sentWr     io.Writer
 	sentList   []string
+	resendList []string
 	intBetween time.Duration
 }
 
@@ -97,7 +97,7 @@ func NewMailer(conf *Config) (*Mailer, error) {
 
 	// parse cc/bcc
 	if cclist := conf.Delivery.CcList; cclist != "" {
-		cc, err := stdmail.ParseAddressList(cclist)
+		cc, err := ParseAddressList(cclist)
 		if err != nil {
 			return nil, fmt.Errorf("parse CC-list %s error: %w", cclist, err)
 		}
@@ -107,7 +107,7 @@ func NewMailer(conf *Config) (*Mailer, error) {
 	}
 
 	if bcclist := conf.Delivery.BccList; bcclist != "" {
-		bcc, err := stdmail.ParseAddressList(bcclist)
+		bcc, err := ParseAddressList(bcclist)
 		if err != nil {
 			return nil, fmt.Errorf("parse BCC-list %s error: %w", bcclist, err)
 		}
@@ -129,22 +129,52 @@ func NewMailer(conf *Config) (*Mailer, error) {
 	return &m, nil
 }
 
-func (m *Mailer) readSentList() error {
-	fd, err := os.Open(m.conf.Delivery.SentFile)
+func (m *Mailer) readLines(filename string, fn func(string) string) ([]string, error) {
+	fd, err := os.Open(filename)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil
+			return nil, nil
 		}
-		return fmt.Errorf("open file %s error: %w", m.conf.Delivery.SentFile, err)
+		return nil, fmt.Errorf("open file %s error: %w", filename, err)
 	}
 	defer fd.Close()
 
+	lines := []string{}
 	scan := bufio.NewScanner(fd)
 	for scan.Scan() {
-		addr := strings.TrimSpace(scan.Text())
-		if addr != "" {
-			m.sentList = append(m.sentList, strings.ToLower(addr))
+		line := strings.TrimSpace(scan.Text())
+		if line != "" {
+			lines = append(lines, fn(line))
 		}
+	}
+
+	return lines, nil
+}
+
+func (m *Mailer) readSentList() error {
+	/*
+		fd, err := os.Open(m.conf.Delivery.SentFile)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return fmt.Errorf("open file %s error: %w", m.conf.Delivery.SentFile, err)
+		}
+		defer fd.Close()
+
+		scan := bufio.NewScanner(fd)
+		for scan.Scan() {
+			addr := strings.TrimSpace(scan.Text())
+			if addr != "" {
+				m.sentList = append(m.sentList, strings.ToLower(addr))
+			}
+		}
+	*/
+
+	var err error
+	m.sentList, err = m.readLines(m.conf.Delivery.SentFile, strings.ToLower)
+	if err != nil {
+		return err
 	}
 	sort.Strings(m.sentList)
 
@@ -156,16 +186,40 @@ func (m *Mailer) readSentList() error {
 		}
 	}
 
+	// 2. Read resend
+	m.resendList, err = m.readLines(m.conf.Delivery.ResendFile, strings.ToLower)
+	if err != nil {
+		m.ui.Logf("[WARN] reading resend-list failed: %v\n", err)
+	}
+	sort.Strings(m.resendList)
+
+	// log if verbose mode
+	if m.conf.Verbose {
+		m.ui.Logf("<<ReSend addresses>>\n")
+		for _, addr := range m.resendList {
+			m.ui.Logf("  %s\n", addr)
+		}
+	}
+
 	return nil
 }
 
 func (m *Mailer) mailSent(addr string) bool {
 	addr = strings.ToLower(strings.TrimSpace(addr))
-	_, found := sort.Find(len(m.sentList), func(i int) int {
+	_, resend := sort.Find(len(m.resendList), func(i int) int {
+		return strings.Compare(addr, m.resendList[i])
+	})
+	if resend {
+		// force resend email
+		return false
+	}
+
+	// check if already sent
+	_, sent := sort.Find(len(m.sentList), func(i int) int {
 		return strings.Compare(addr, m.sentList[i])
 	})
 
-	return found
+	return sent
 }
 
 func (m *Mailer) Send(ctx context.Context) (Stats, error) {
@@ -238,7 +292,7 @@ func (m *Mailer) sendMail(ctx context.Context, conn *mail.SMTPClient, datum Mail
 	if toVals == "" {
 		return ActContinueError, fmt.Errorf("destination address not found/field `%s` is empty", toField)
 	}
-	toList, err := stdmail.ParseAddressList(toVals)
+	toList, err := ParseAddressList(toVals)
 	if err != nil {
 		return ActContinueError, fmt.Errorf("parse address `%s` error: %w", toVals, err)
 	}
@@ -321,7 +375,8 @@ func (m *Mailer) sendMail(ctx context.Context, conn *mail.SMTPClient, datum Mail
 	}
 	m.ui.Logf("Sent email to: %s\n", dest)
 	fmt.Fprint(m.sentWr, sbSent.String())
-	st.NumSent += toCount
+	st.NumSentAddr += toCount
+	st.NumSentData++
 
 	return ActContinueError, msg.GetError()
 }

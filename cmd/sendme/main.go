@@ -95,11 +95,12 @@ func main() {
 		pp.Println(conf)
 	} else {
 		st, err := mailer.Send(ctx)
-		fmt.Printf("Number Sent         : %d\n", st.NumSent)
+		fmt.Printf("Number Sent (addr)  : %d\n", st.NumSentAddr)
+		fmt.Printf("Number Sent (data)  : %d\n", st.NumSentData)
 		fmt.Printf("Number Skip         : %d\n", st.NumSkip)
-		fmt.Printf("Number already sent : %d\n", st.NumAlreadySent)
-		fmt.Printf("Number error        : %d\n", st.NumError)
-		fmt.Printf("Total data          : %d\n", st.Total)
+		fmt.Printf("Number Already Sent : %d\n", st.NumAlreadySent)
+		fmt.Printf("Number Error        : %d\n", st.NumError)
+		fmt.Printf("Total Data          : %d\n", st.Total)
 		if err != nil {
 			log.Fatalf("Error sending email: %v\n", err)
 		}

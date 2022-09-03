@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"net/mail"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +22,8 @@ type MailDataCollection struct {
 
 type Stats struct {
 	Total          int
-	NumSent        int
+	NumSentData    int
+	NumSentAddr    int
 	NumAlreadySent int
 	NumSkip        int
 	NumError       int
@@ -54,6 +56,37 @@ func (m MailData) HasFields(reqFields []string) bool {
 		}
 	}
 	return true
+}
+
+// ParseAddressList parse email addresses
+func ParseAddressList(list string) ([]*mail.Address, error) {
+	addresses, err := mail.ParseAddressList(list)
+	if err == nil {
+		return addresses, nil
+	} else if list == "" {
+		return addresses, err
+	}
+
+	// try other spearator first
+	// TODO: any valid separator
+	const seps = ";|"
+	for _, sep := range seps {
+		var b strings.Builder
+		b.Grow(len(list))
+		for _, r := range list {
+			if sep == r {
+				b.WriteRune(',')
+			} else {
+				b.WriteRune(r)
+			}
+		}
+
+		if address, e := mail.ParseAddressList(b.String()); e == nil {
+			return address, nil
+		}
+	}
+
+	return addresses, err
 }
 
 // NewMailDataCollection create mail data collection from files
