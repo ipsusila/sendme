@@ -304,6 +304,17 @@ func (m *Mailer) sendMail(ctx context.Context, conn *mail.SMTPClient, datum Mail
 		msg.SetBody(mail.TextPlain, body)
 	}
 
+	// setup attachments
+	files := datum.AttachmentFiles()
+	for _, af := range files {
+		fi := mail.File{
+			FilePath: af.FilePath,
+			Name:     af.Name,
+			Inline:   af.Inline,
+		}
+		msg.Attach(&fi)
+	}
+
 	// setup subject field
 	subjectField := c.Delivery.SubjectDataField
 	subject := datum.StringDefault(subjectField, c.Delivery.DefaultSubject)

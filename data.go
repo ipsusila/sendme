@@ -7,9 +7,15 @@ import (
 	"net/mail"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/xuri/excelize/v2"
+)
+
+// Attachment key.
+const (
+	AttachmentKeyPrefix = "attachment_"
 )
 
 // MailData to-be applied to template
@@ -18,6 +24,12 @@ type MailData map[string]interface{}
 // MailDataCollection stores list of mail data from spreadsheet
 type MailDataCollection struct {
 	Data []MailData
+}
+
+type AttachmentFile struct {
+	FilePath string
+	Name     string
+	Inline   bool
 }
 
 type Stats struct {
@@ -56,6 +68,34 @@ func (m MailData) HasFields(reqFields []string) bool {
 		}
 	}
 	return true
+}
+
+// AttachmentFiles extract attachment file.
+// Format: <filename>[,name,inline]
+func (m MailData) AttachmentFiles() []*AttachmentFile {
+	files := []*AttachmentFile{}
+	for key, val := range m {
+		lk := strings.ToLower(key)
+		if field, ok := val.(string); ok && strings.HasPrefix(lk, AttachmentKeyPrefix) {
+			items := strings.Split(field, ",")
+			af := AttachmentFile{}
+			for i, item := range items {
+				val := strings.TrimSpace(item)
+				switch i {
+				case 0:
+					af.FilePath = val
+					files = append(files, &af)
+				case 1:
+					af.Name = val
+				case 2:
+					if inline, err := strconv.ParseBool(val); err == nil {
+						af.Inline = inline
+					}
+				}
+			}
+		}
+	}
+	return files
 }
 
 // ParseAddressList parse email addresses
